@@ -1,0 +1,446 @@
+\documentclass[12pt]{article}
+\usepackage{amsmath,amsthm,amssymb,dsfont,polynom}
+\usepackage[pdftex]{graphicx}
+
+\graphicspath{{images/}}
+
+\usepackage[margin = 1.0in]{geometry}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\pagestyle{fancy}
+\lhead{Francis Pich\'e}
+
+\thispagestyle{empty}
+
+
+\newtheorem{problem}{Problem} 
+\theoremstyle{definition} 
+\newtheorem*{solution}{Solution}
+
+\usepackage{listings}
+\usepackage{color}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language= Python,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=3
+}
+
+
+\begin{document}
+\title{COMP310/ECSE427 Study guide}
+\author{Francis Pich\'e}
+\date{\today}
+\maketitle
+\newpage
+\tableofcontents
+\newpage
+
+\part{Preliminaries}
+\section{Disclaimer}
+These notes are curated from Professor Muthucumaru Maheswaran COMP310/ECSE427 lectures at McGill University, and \textit{A. Tenenbaum and H. Bos, Modern Operating Systems, 4th Edition, Pearson, 2015}. They are for study purposes only. They are not to be used for monetary gain. 
+\section{About This Guide}
+I make my notes freely available for other students as a way to stay accountable for taking good notes. If you spot anything incorrect or unclear, don't hesitate to contact me via Facebook or e-mail at \url{http://francispiche.ca/contact/}.
+\part{Overview of OS Concepts}
+\section{Introduction}
+\subsection{What is an OS?}
+An operating system is a trusted software which interfaces between the hardware and user applications to provide: 
+\begin{itemize}
+	\item Security
+	\item Usability
+	\item Efficiency
+	\item Abstractions
+	\item Resource management
+\end{itemize}
+They attempt to solve the problem of maximizing utilization, and minimizing idle time, to maximize throughput.
+\subsection{Design Concerns For Different OS's}
+For a personal/embedded system: response time should be minimal
+\\ \linebreak
+For a time-sharing system: there should be \textit{fair} time sharing
+\\ \linebreak
+In batch-processing systems: goal is to maximize throughput.
+
+\subsection{Booting}
+First, the hardware is powered and the CPU is in "real-mode" which is essentially "trust everything mode". From here, the BIOS are loaded from ROM, and the CPU switches to "protected" or "user" mode. Finally the Kernel finishes initialization and the kernel services (OS) are started.
+
+\subsection{Processes}
+A process is a running program. Each process has an "address space" or "\textbf{core image}" in memory which it is allowed to use.
+\\ \linebreak
+
+This address space contains the program's: 
+\begin{itemize}
+	\item executable code
+	\item data (variables etc)
+	\item call stack
+\end{itemize}
+The \textbf{process table} is an array of structures containing each process in existence. This includes all of the state information about each program, even if it is in a suspended or background state. (Some programs may run periodically or in the background).
+\\ \linebreak
+A \textbf{child process} is a process that was created by another process.
+\\ \linebreak
+Each person using a system is assigned a \textbf{UID}. Each process has the UID of the person who started it. Child processes have the UID of their parent.
+\\ \linebreak
+Multiple processes allows for better utilization since while one process is idle (for example waiting for I/O) another process can work.
+\subsection{Memory Management}
+Processes need to be kept separate from other processes, and memory must also allow more than one process to exist in RAM at the same time.
+\\ \linebreak
+We might also need to have these processes communicate.
+\\ \linebreak
+Thanks to virtual memory, the address space can be larger than the actual amount of physical memory addresses. For more on virtual memory, see my COMP273 guide (or this guide in the later sections.) This also allows for better "chunking" of memory to keep processes separate. We can also provide shared memory spaces for inter-process communcation. Virtual memory also allows for processes to not care where in memory they actually are, which is useful since they may be moved around when they get "kicked out" by another process.
+
+
+\subsection{Storage}
+Need persistent storage, but it's slow. A hard disk is broken up into blocks which contain binary data. So when you use files, for example, they are saved as a series of blocks of binary data on the secondary storage.
+
+\subsection{OS and Interrupts}
+There are two kinds of Interrupts, hardware and software. Hardware is when a device sends a signal to the CPU, for example, a mouse is moved and needs to be processed. Software is when a program (OS or otherwise) throws an exception (trap). This alters the regular flow of the CPU and is therefore an interrupt.
+
+\subsection{Dual-Mode OS}
+Dual mode is the idea of keeping Users (unprivileged) and the kernel (privileged) separate. This provides greater security since this ensures on the trusted OS can make potentially dangerous operations on the core of the computer. 
+\\ \linebreak
+When a program running in user mode sends a system call, the OS then switches to kernel mode to complete the operation, and back when complete.
+\\ \linebreak
+
+\subsection{Monolith vs Micro-Kernel}
+There are two main architectures for an OS, the Monolith (one big program that handles everything) and the Micro-kernel. The latter's kernel is just the bare minimum inter-process communication, while the rest is a series of micro-services each capable of executing one OS task.
+
+\part{Scheduling}
+\section{Processes}
+A process is an abstraction of a running program. (As stated previously). It is necessary because we need to be able to handle multi-programming. For example, a webserver handling many user requests at the same time.
+\\ \linebreak
+This allows for better utilizaton (even if only 1 core CPU) since while one program needs to wait (IO or something) another can run. While there is overhead for context-switching, it is still generally faster to do this.
+\subsection{Process Representation}
+The process needs to contain:
+\begin{itemize}
+	\item Program counter
+	\item Stack
+	\item Register state
+	\item Memory state
+	\item Stack etc.
+\end{itemize}
+A process is represented by a process control block. This is a table whose entries (indexed by process id's (PID)), are a sub-table containing (at least):
+\begin{itemize}
+	\item CPU State
+	\item Processor ID
+	\item Memory
+	\item Open files
+	\item Status
+	\item Parent and Child process'
+	\item Priority
+\end{itemize}
+So to switch context, we would need to save all the things we need, load the new process, run it for a while, and repeat.
+
+\subsection{Lifecycle Management}
+We need to manage how process are handled through their whole lifecycle. This includes their creation, state changes and termination.
+\\ \linebreak
+Processes are created using a system-call (can't just make processes willy-nilly, need to call the kernel).
+\\ \linebreak
+There are two approaches to this, either we build the table from scratch, or we clone an existing process. The latter is the UNIX approach and the one we'll focus on. In this, we stop the current process and save it's state. We then make a copy of all the code, data, heap and PCB and give this new process a new PID. Then, we pass it to the dispatcher which will schedule the process.
+\\ \linebreak
+\subsubsection{fork()}
+This cloning method is done using the \texttt{fork()} system call, after which the parent and child run concurrently. Note that the \texttt{fork()} call returns the PID of the child process to the parent, and 0 to the child if successful, and -1 otherwise.
+\\ \linebreak
+For example:
+\begin{lstlisting}
+	main() {
+		int i;
+		i = 10;
+		if (fork() == 0) i+= 20;
+		printf(" %d ", i);
+	}
+	ouput> 10, 30
+\end{lstlisting}
+The parent outputs 10 (unchanged) and the child outputs 30 (was affected by the if statement).
+
+\subsubsection{State}
+A process can change state while it is executing. For example if theres no memory or processor available, waiting for some outside event, we finished the task and exit, etc. The possible states are:
+
+\begin{itemize}
+	\item New (Process creation begins)
+	\item Ready (Process has been created and is ready to be loaded and run.)
+	\item Blocked (Waiting for some reason)
+	\item Active (Running)
+	\item Stopped (Suspended by the scheduler)
+	\item Exiting (has been terminated (either normally or by killing))
+\end{itemize}
+\includegraphics{state_diagram}
+A process enters the exiting state when either it finishes its task (uses an \texttt{exit()} call), caught an exception, or some user decided to kill it.
+\subsubsection{Tiny Shell}
+This is Prof Maheswaran's example of a shell.
+\begin{lstlisting}
+	while(1){
+		printf("Prompt>")
+		getline(line)
+		if(strlen(line) > 1){
+			if(fork() == 0){
+				exec(line)
+			}
+			wait(child)
+		}
+	}
+\end{lstlisting}
+In this, the parent creates a new child process for each command, and waits for the child to complete.
+
+\subsection{Dispatcher}
+There are two ways for the dispatcher to get control of the CPU (since it can only be used by one process at a time, and the dispatcher itself is a process), waiting (trust the other process) or by interrupts. The latter is preferred, since the other process may have an infinite loop, otherwise be bad.
+\\ \linebreak
+When an interrupt is sent, the OS saves the state of the active process, and runs the interrupt routine. (This is the process of saving the PC, status, registers, file pointers, memory etc.)
+Note that while this process occurs, no other interrupts are allowed.
+\\ \linebreak
+Also note that memory is not always saved to disk. Since we use isolated address spaces for each process, the memory of one process (even if idle) need not be overwritten by another.
+
+\section{Process I/O}
+How do processes deal with I/O?
+\\ \linebreak
+They have an array of "handles" which are each hooked up to an external device. (Mouse, keyboard, file, etc) These handles allow for easy communication between the process and any external I/O devices.
+\\ \linebreak
+This table exists in the Kernel memory. (Restricted block of RAM).
+So the only way for a process to access this table is through a system call.
+\\ \linebreak
+
+\subsection{File Descriptors}
+We call the slots of the array \texttt{file descriptors}. In code, this looks like:
+\begin{lstlisting}
+main() {
+	char buf[BUFFERSIZE];
+	const char* note = "Write failed\n";
+	
+	while ((n = read(0, buf, sizeof(buf)) > 0))
+		if(write(1, buf, n) != n){
+			(void)) write(2, note, strlen(note));
+			exit(EXIT_FAILURE);
+		}
+	return(EXIT_SUCCESS)
+}
+\end{lstlisting}
+Where we are reading from 0, writing to 1 and 2. We call 0 \texttt{standard input}, 1 \texttt{standard output}, and 2 \texttt{standard error}.
+\\ \linebreak
+We can then use the \texttt{read()} and \texttt{write()} methods to specify which file descriptor to use.
+\\ \linebreak
+If we use \texttt{open()} to open a file. This returns a file descriptor of $n>2$ (assuming close(0) or close(1) was not called before). We can then pass this number to a system call such as \texttt{read()} or \texttt{write()} to access the file.
+\\ \linebreak
+It's worth noting that the operations are not being sent/recieved directly to/from disk, since that would be slow. We actually interface with a cached version of the file from kernel memory.
+\\ \linebreak
+We can do: \texttt{close(1)} and \texttt{open("file")} to overwrite the 1 to point to the file. (Since open goes to the first available array slot)
+\\ \linebreak
+Similarly we can do \texttt{close(0)} to do input redirection.
+\\ \linebreak
+
+We can also implement piping. This is when we have one process' output be the input for another process. We need to pass through the kernel space. We use the \texttt{pipe()} system call. The pipe creates two file descriptors, one for each side of the pipe. This works since the pipe (a space in the kernel) is created by a parent process, and since the \texttt{fork()} system call clones everything from the parent to the child, the child will have access to the pipe.
+\\ \linebreak
+Then, we rewire the file descriptors such that we set one end of the pipe to 1 (in the parent process), and the output end to 0. (in the child process) This is done using a close, and a \texttt{dup()}, which duplicates a file descriptor and puts it in the first open spot.
+
+\section{Threads}
+
+\subsection{Concurrency vs Parallelism}
+Concurrency is running multiple, discrete tasks on a single-core system. Parallelism is running on completely separate cores (actually running at the same time). Concurrency is sort of "broader" and more conceptual than parallelism. It is not necessarily caring about performance, while parallelism is entirely concerned about performance.
+\\ \linebreak
+\subsection{Parallelism}
+We need parallelism to do things faster (duh). 
+\\ \linebreak
+Most applications are not completely parallel. They normally have a serial portion (non-parallel) and a parallel portion. But how much of a parallel portion can we make to make things go faster?
+\\ \linebreak
+\subsection{Amdhals Law}
+\textit{Performance improvement obtained by applying an enhancement on an application execution is limited by the fraction of time the enhancement can be applied.}
+\\ \linebreak
+Basically if your improvement only speeds up half of the application, the best you can do is speed up your application by one half, since the other half is unchanged. 
+\\ \linebreak
+So a speedup is given by:
+$$speedup \leq \frac{1}{S + \frac{1-S}{N}}$$
+where $S$ is the serial portion, and $N$ is the number of cores. So then $1-S$ is the parallel portion.
+
+\subsubsection{Example of Ambhals Law}
+Suppose you have a problem that takes $500s$ to complete on a single core machine. How long would it take an 8 core machine if $60\%$ of the problem can be run in parallel?
+\\ \linebreak
+First, $40\%$ that cannot be parallelized is $200s$. Next, we can divide the remaining $300s$ could be separated amongst 8 cores, so $300/8 = 37.5$. In total we have $200 + 37.5 = 237.5$
+\\ \linebreak
+Now suppose we have 64 cores. Again we have $200s$ for the non-parallel part, then $300/64 = 4.6$ So in total $204.6s$. Not a big increase in speed for a massive increase in complexity (for managing 64 cores). 
+\\ \linebreak
+Now what if our process takes $5000s$? How does it run on 8 cores? 64 cores?
+$$2000 + 365 = 2375s$$
+$$2000 + 46 = 2046s$$
+So again it doesn't scale all that great.
+\\ \linebreak
+Now suppose further that we have 10 instances of the $500s$ application instead. On 8 cores, we can send 8 instances to individual cores to complete in $500s$, then divide the remaining two instances amongst the 8 cores (4 cores for each instance). So then we have 
+$$500 + 200 + 300/4 = 700.25s$$
+Now what if we had 64 cores?
+We can break up the 64 cores into 9 groups of 6, and one group of 10. So we have 10 groups total. We can split each instance amongst a group. So the groups of 6 would take time:
+$$200 + 300/6 = 250s$$
+and the group of 10 would take time:
+$$ 200 + 300/10 = 230s$$
+All groups run at the same time, so the total time is the max of the group of 6, and the group of 10. So in total:
+$$ max(250, 230) = 250s$$
+Obviously, all of these calculations don't include overhead.
+\\ \linebreak
+Since the max is take, we could have just divided 10 groups of 6, and left 4 cores idle. This would have less overhead and be more beneficial.
+
+\subsection{Threads}
+Threads can make things happen at the same time, and are much more lightweight than a process. For example, you may want a web server that can handle multiple threads at the same time, one for each request. If you were to use a new process, the application would be much heavier. This is why Chrome is so RAM heavy, since they use processes and not threads.
+\\ \linebreak
+Threads can also share memory, which is easier for programming.
+\\ \linebreak
+Threads however are much less fault tolerant, and can introduce a lot of synchronization issues if not implemented correctly.
+\\ \linebreak
+Processes are heavy because we have the whole memory, resource allocation, table etc to worry about, while threads are light since they live within processes, and share resources with other threads in the process (minus the call-stack).
+\\ \linebreak
+For this reason, you should be careful with the scope of your variables in threads, or else a change in one thread could affect another thread. Registers and the stack are the only things that are separate in threads.
+\\ \linebreak
+
+\subsection{User vs. Kernel Threads}
+User threads are when the management is done by the user-level libraries. This cannot use the scheduler, since it does not have access to the kernel. There is one kernel-level thread that all the user-level threads map into. If one of the threads block, all of the threads block. the advantage to this is that thread-switching would be faster since we wouldn't need to make system calls.
+\\ \linebreak
+Meanwhile kernel threads are managed by the kernel scheduler and use kernel-level libraries.
+\\ \linebreak
+Only kernel level threads are able to manage the multiple threads to run at the same time (or at least concurrently).
+\\ \linebreak
+In this way, each user-level thread maps to one kernel-level thread.
+
+\subsubsection{Hybrid Threads}
+This is when there are multiple kernel threads, multiple kernel threads and they are mapped together (not necessarily 1 to 1). So this allows many user level threads to be mapped to a fewer number of kernel level threads. This is not often used.
+
+\subsection{Threads in Linux}
+Recall that threads share memory. However, they also have their own specific stacks. So in memory, it would look like:
+\\
+\includegraphics{linux_threads}
+\\
+We are therefore limited in the number of threads we can have.
+\subsection{Pthreads}
+Pthreads allow for portable threads. It is an interface (not implemented library) according to the POSIX standard so that we can develop for different operating systems.
+\\ \linebreak
+To create one:
+\begin{lstlisting}
+#include <pthread.h>
+
+int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start)(void*), void *arg);
+
+\end{lstlisting}
+Note that this signature is similar to clone(). This thread will be kernel level.
+\\ \linebreak
+To then exit the thread, we can:
+\begin{itemize}
+	\item The function we specified to \texttt{pthread\_create} returns. 
+	\item Thread calls \texttt{pthread\_exit()}
+	\item Thread is canceled by \texttt{pthread\_cancel()} (preferred).
+\end{itemize}
+Each thread is identified by an ID. We can get the thread ID with: \texttt{pthread\_self()} or we can check if two threads are the same with \texttt{pthread\_equal(pthread\_t t1, pthread\_t t2)}
+\\ \linebreak
+
+One thread can wait for another thread using the \texttt{pthread\_join(pthread\_t thread, void **retval)} function. 
+
+\section{Inter-Process Communication}
+Suppose we want to have synchronization between two processes. This is accomplished via either shared memory or message passing.
+\\ \linebreak
+In shared memory, the kernel sets up a space in memory that multiple programs can access.
+\\ \linebreak
+ But how is this actually implemented? We can send messages directly, or indirectly (via a buffer obejct). How do we use buffering, and how do we deal with errors?
+ 
+ \subsection{Direct Communication}
+ This can be achieved either synchronously or asynchronously. 
+ \\ \linebreak
+ In the synchronous case, all send and receives are blocking operations.
+ \\ \linebreak
+ In asynchronous case, send operations is usually non-blocking, but the receive may be blocking, or non-blocking.
+ \\ \linebreak
+ We can also do symmetric or asymmetric addressing. This is when we either specify the name of the process we are talking with (symmetric) or we simply listen for anyone (asymmetric).
+ \\ \linebreak
+ 
+ \subsection{Indirect Communication}
+ Here we use mailboxes. We simply write to the mailbox, or read from the mailbox. We don't care who the sender or receiver was.
+ \\ \linebreak
+ A special case of this mailbox is ports. With ports many process can write, but only one can read. We need ports because if we just sent messages to the whole system, there would be no way of knowing which process the message is for.
+ \\ \linebreak
+ 
+ \subsection{Buffering}
+ We can use \texttt{zero capacity} buffer for synchronous communication. This means that both processes must be ready to read/write to make the successful message.
+ \\ \linebreak
+\texttt{Bounded capacity} is when the buffer is full, the sender waits.
+\texttt{Infinite capacity} is when the sender never waits.
+\\ \linebreak
+
+\subsection{Error Handling}
+Messages can get messed up. They can get duplicated, delayed, or delivered out of order. 
+ 
+\section{Synchronization}
+Concurrent processes can be of two main types: \texttt{competing} and \texttt{cooperating}. The OS manages competing processes through context switching and resource management. For this reason, competing processes are independent of eachother, and thus are deterministic and reproducible. So its the cooperating processes we need to worry about. These, by contrast, can influence each other, and in many cases are not deterministic. They are aware of each other, and pass messages (either directly or indirectly). 
+\\ \linebreak
+\subsection{Race Conditions \& Critical Sections}
+A race condition is when the order in which the steps of a procedure occur affects the outcome of the procedure.
+\\ \linebreak
+We can avoid race conditions using mutual exclusion. This is when we declare sections of code in which a race condition occurs to be a critical section, and enforce the condition that only one process may be in the critical section at one time.
+\\ \linebreak
+More formally, a critical section must meet these requirements:
+
+\begin{itemize}
+	\item No two processes may be simultaneously in their critical sections
+	\item No assumptions can be made about the speed or number of CPU's
+	\item No process running outside its critical section may block other processes
+	\item No process should have to wait forever to enter its critical section
+\end{itemize}
+Critical sections should always run to completion, and must never be interrupted in the middle.
+\\ \linebreak
+For efficiency, we should try to minimize the lengths of the critical sections.
+\\ \linebreak
+We could try to handle them by disabling all interrupts. This would work in a single processor case, since interrupts are generally the cause of out-of-order execution. However, this is not practical, since the OS would be frozen during the critical sections execution, and it doesn't work with multiple processors.
+
+\subsection{Locks}
+We only want one thread running through the critical section at a time, so how can we do this?
+
+\subsubsection{Attempts at Locks}:
+We could simply try to "take turns" by having a shared variable that is set after the critical section using a busy-wait. This is bad, because we violate the critical section conditions, namely, its possible that one process wait forever to enter.
+\\ \linebreak
+We could also try to replace the turn variable with two flags. Process 0, waits for \texttt{flag[1]}, and sets \texttt{flag[0]} to true when entering, and then to false when exiting. Process 1 would do a symmetrical thing on it's side.
+\\ \linebreak
+This doesn't work, since we would need a lock, for the lock! Imagine a scenario where the busy wait loop of process 0 completes, and it enters the block. Then, we have a context switch just before the flag can be set to true. Then, process 1 would be able to proceed into the critical section, ignoring the lock, and both processes would be executing the critical section.
+\\ \linebreak
+But what if we set both flags to true \textit{before} the busy wait. Well, in this case, both would be locked out of the critical section. This happens similarly to the last attempt, where if a context switch happens just after the flag is set, and before the busy wait, both flags would be true, and neither could enter. This is known as \textbf{deadlock}.
+\\ \linebreak
+In yet another attempt, we can expand the while loop busy wait to include an unset of the flag, a delay, and then a reset of the flag. This allows time for the other process to "unlock" itself. This works if the delays are truly random, and can never get synchronized in both processes. This is known as \textbf{livelock}
+
+\subsubsection{Petersons Algorithm}
+This algorithm uses a combination of the shared turn variable, and setting flags before a busy loop. The only difference is that the condition in the wait includes both the flag and the turn. This only works for 2 processes, but it's good that it doesn't use a system call or any OS involvement. It is a "software only" solution.
+
+\subsection{Hardware Solutions}
+How can hardware help with mutual exclusion?
+\\ \linebreak
+TSL, RX, LOCK are all CPU instructions that are often found on modern CPU's. This works by setting a lock variable in memory, then, when a program calls \texttt{TSL R1 lockaddress}, it will pull the lock from the address, and place a 1 in the lock address. This is the same as the shared variable we were talking about, but not its in hardware so it works. It works, since hardware is completely atomic. A zero is only received from TSL when no other process is in the critical section. Whenever a 1 is received, a busy loop happens.
+\\ \linebreak
+This has many advantages:
+\begin{itemize}
+	\item works for $n$ processes
+	\item can be used by multiple processors (as long as they share memory)
+	\item Simple
+	\item works for $n$ critical sections
+\end{itemize}
+But, it still uses busy waiting, and starvation is possible. The order in which processes enter is arbitrary.
+\\ \linebreak
+
+\section{Priority Inversion}
+This problem arises from mutual exclusion and busy waiting. 
+\\ \linebreak
+If there are two processes, one high priority and one low priority, where the scheduler always runs the high priority if it is ready, then say at some point the low priority is in it's critical section. It's possible that the low priority never leaves it's critical section, since the high priority is constantly running, and is stuck in a busy wait. 
+
+\subsection{Sleep/Wakeup}
+
+\subsubsection{Semaphores}
+Basically, processes can send messages to each other, and their execution can be altered (stopped, started etc.) by these messages. We can use this for more complex coordination of processes. A semaphore is a special variable that is used to accomplish this message passing. wait() and signal() are examples of sending a message through a semaphore.
+\\ \linebreak
+
+
+\part{Memory \& Virtualization}
+
+\part{Security}
+\end{document}
