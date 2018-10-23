@@ -434,11 +434,80 @@ This problem arises from mutual exclusion and busy waiting.
 If there are two processes, one high priority and one low priority, where the scheduler always runs the high priority if it is ready, then say at some point the low priority is in it's critical section. It's possible that the low priority never leaves it's critical section, since the high priority is constantly running, and is stuck in a busy wait. 
 
 \subsection{Sleep/Wakeup}
+The alternative to busy waiting is to have a sleep wakeup using semaphores. This is better since it does not take up so much CPU time and is not as prone to priority inversion and deadlock.
+\\ \linebreak
+However, this has some overhead, and so if there is a very few number of processes/context switches, busywaiting can still be better, since it has less overhead.
+\\ \linebreak
 
-\subsubsection{Semaphores}
+\subsection{Assembly Level Instructions}
+As shown in the demo in class, even if something is a single instruction (in C) it does not necessarily mean it cannot be interrupted. One command, even as simple as a variable assignment, can be interrupted since it is broken down into multiple assembly instructions. This depends on the level of complexity of the instructions, and whether a 32-bit machine or 64-bit machine is being used. (If you use a 32-bit machine, more instructions are require  to split up and manipulate numbers).
+\\ \linebreak
+A lock instruction in Assembly will actually prevent any interrupts from entering the bus while it is executed so the lock instruction itself cannot be stopped as another instruction could.
+\\ \linebreak
+
+\subsection{Semaphores}
 Basically, processes can send messages to each other, and their execution can be altered (stopped, started etc.) by these messages. We can use this for more complex coordination of processes. A semaphore is a special variable that is used to accomplish this message passing. wait() and signal() are examples of sending a message through a semaphore.
 \\ \linebreak
 
+Example:
+\\
+\texttt{wait(sem)} will wait on the semaphore 'sem', by decrementing the value of \texttt{sem} if it is non-negative, it will proceed. Otherwise, the running process will go to sleep. So say the 'sem' is 1 initially. Some process can come through, change it to zero, and keep going. Then, some other process would come through, change it to -1, and go to sleep.
+\\ \linebreak
+
+Semaphores are implemented inside the kernel, and so are only accessible through a system call.
+\subsubsection{Semaphore Structure}
+The semaphore is a struct made up of an integer to keep track of whether the lock is released or not (negative means no, 1 means yes), and a queue containing them. The wait() function would just be decrementing the count, and if the count is negative, add the process to the queue and block the process. The signal() function is the opposite, it increases the count, and if the count is not 1, remove a process from the queue and mark it as "ready".
+\\ \linebreak
+
+\subsubsection{Producer Consumer with Semaphores}
+The producer adds things to a buffer, the consumer removes them. Implemented with semaphores, there are 3 semaphores. The "mutex", which is the simple lock to protect the critical section, the "empty" which is used to count how many slots in the buffer are empty (initialized to the size of the buffer, N), and the "full" which is used to count how many slots are full (initialized to 0). So the producer needs to:\\
+\begin{tabular}{l l}
+	&1.) produce an item \\
+	&2.) wait() for the "empty" semaphore to not add to the buffer if there is no empty slot available.\\
+	&3.) wait() for the critical section\\
+	&4.) Insert the item to the buffer\\
+	&5.) signal() that it is done with it's critical section\\
+	&6.) signal() to the "full" semaphore that it has added something to the buffer (increment it up)
+	
+\end{tabular}\\
+The consumer then needs to\\
+\begin{tabular}{l l}
+	&1.) wait() on the "full" semaphore until there is something in the buffer \\
+	&2.) wait() for the critical section \\
+	&3.) remove an item from the buffer \\
+	&4.) signal that it is done in the critical section \\
+	&5.) siganl to the "empty" semaphore that it has removed an item (decrement it)\\
+\end{tabular}\\
+The problem with the above implementation is that there are 4 system calls for each process (very heavy). It would be better if we could find a more lightweight version of this.
+\\ \linebreak
+\subsubsection{Types of Semaphores}
+A strong semaphore respects the FIFO queue, a weak semaphore does not.
+\\ \linebreak
+Binary semaphores are simply an on/off switch, and can only take on two values, 0 and 1. Counting semaphores on the other hand can be used for any number, negative or positive. We saw this with the producer/consumer example.
+\subsubsection{Barrier() Synchronization Using Semaphores}
+A barrier is essentially a synchronization primitive.
+\\ \linebreak
+Suppose we have two processes, P1 and P2, where P1 reaches a function $f()$ faster. How do make sure that P2 and P1 enter $f()$ at the same time? (not a critical section, just want them to go in the function at the same time). 
+\\ \linebreak
+Suppose we have a barrier, $b=4$. (4 processes need to wait for eachother). Each process can call $b.bwait()$.
+\\ \linebreak
+We use 1 binary semaphore $mutex$, and one counting semaphore $barrier$.
+\\ \linebreak
+\begin{lstlisting}
+bwait(){
+	wait(mutex)
+	bcount--;
+	if(bcount==0){
+		signal(barrier) //trigger wakeup cascade
+		signal(mutex)//release the mutex
+	}else{
+		signal(mutex) //release the mutex
+		wait(barrier) //go to sleep
+		signal(barrier) //wake up, this will cause a cascading effect when the bcount==0
+	}
+}
+\end{lstlisting}
+In the above, you can see that once the last process decrements count to 0, it causes a signal() which will wakeup a semaphore which will immediately wakeup and signal() again, which will wake up and signal() etc..
 
 \part{Memory \& Virtualization}
 
