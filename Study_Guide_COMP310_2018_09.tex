@@ -428,7 +428,7 @@ This has many advantages:
 But, it still uses busy waiting, and starvation is possible. The order in which processes enter is arbitrary.
 \\ \linebreak
 
-\section{Priority Inversion}
+\subsection{Priority Inversion}
 This problem arises from mutual exclusion and busy waiting. 
 \\ \linebreak
 If there are two processes, one high priority and one low priority, where the scheduler always runs the high priority if it is ready, then say at some point the low priority is in it's critical section. It's possible that the low priority never leaves it's critical section, since the high priority is constantly running, and is stuck in a busy wait. 
@@ -508,8 +508,243 @@ bwait(){
 }
 \end{lstlisting}
 In the above, you can see that once the last process decrements count to 0, it causes a signal() which will wakeup a semaphore which will immediately wakeup and signal() again, which will wake up and signal() etc..
+\\ \linebreak
 
-\part{Memory \& Virtualization}
+\subsubsection{Light Mutex}
+How can we reduce the number of system calls?
+\\ \linebreak
+First we need to assume an assembly instruction (atomic) is available to \texttt{fetch\_and\_add}. This will fetch whatever is add an address, and add the parameter given to it, and put it back. (Similar to TSL). \\
+\begin{lstlisting}
+	lock(m){
+		count = 0
+		if (fetchandadd(count + 1)>0){ //increment count by one (atomically)
+			wait(m) //if someone is in the lock, count is > 0
+		}
+	}
+	
+	unlock(m){
+		count = 0
+		if (fetchandadd(count - 1) > 1){
+			signal(m)
+		}
+	}
+\end{lstlisting}
+By doing this, we can check if something is actually in the lock without needing to go to the kernel. Only when there is actually more than one process in the critical section do we need to invoke the kernel.
+\\ \linebreak
+\subsubsection{Light Semaphore}
+If we have a very short wait/signal we want to use busy waiting since there is less overhead. (Try as exercise).
+\\ \linebreak
 
-\part{Security}
+\subsection{Monitors}
+So far we have always looked at synchronization primitives of the form: enter -$>$ do suff -$>$ exit. But we have other options than semaphores (higher level). Semaphores are kind of like goto statements. They can be super fast in the right hands, but also can get very hairy.
+\\ \linebreak
+Monitors are a high-level abstraction to allow for easy synchronization. It contains the sensitive data, and an API for safely accessing operations on the data. Monitors themselves are critical sections, but they already handle all mutual exclusion.
+\\ \linebreak
+Monitors have condition variables to allow for flexibility in different types of synchronization. Each condition variable has only wait() and signal() operations. (These are different from the semaphore ones!) 
+\\ \linebreak
+How are monitors used for say adding to a global sum?
+\begin{lstlisting}
+Monitor{
+	int gsum
+	add(s){
+		gsum + s
+	}
+}m
+\end{lstlisting}
+The locking is handled by the monitor behind the scenes, so outside we can just all m.add(s) and not worry about locking. 
+\\ \linebreak
+Now how can we implement a semaphore?
+\begin{lstlisting}
+Monitor {
+	int count;
+	condition waiting;
+	
+	init_sem(int i){
+		count = i
+	}
+	
+	sem_wait(){
+		count--
+		if (count <0){
+			waiting.wait()
+		}
+	}
+	
+	sem_signal(){
+		count++
+		if (count <0){
+			waiting.signal()
+		}
+	}
+}m
+\end{lstlisting}
+Again we assume Monitor is a critical section for free :D 
+\\ \linebreak
+\subsection{Lock-free Datastructures (NOT ON EXAM)}
+How can we implement something like a stack (which can be modified by many threads) without using locks? Locks are seemingly necessary since there is a global head pointer, and pointers to the next which can get messed up. But, killing the threads while one thread holds the lock, will cause the other to be locked out. (This is why you cannot kill threads, they must die on their own). But what if we do it without locks?
+\\ \linebreak
+For this we will use a new atomic instruction: \texttt{compare\_and\_swap(new\_value)} this takes a pointer, and checks if the value at that pointer is the same as the new value. It returns true or false. If true, it will swap in a new value. So, in the context of a stack, if one compare and swap passes, it will write, meanwhile the other process compare and swap will always fail, since the value it "thinks" is inside the stack, is not the "true" value.
+\\ \linebreak
+
+\subsection{Readers and Writers problem}
+Suppose you have a database, with several readers and writers. We want concurrent access to the database. How can we make sure that all readers can access at any time, but no two writers can access at the same time? 
+\\ \linebreak
+If we only allow writing when there are no readers, this can cause a problem, since there could be non-stop reads, which would starve the writer. Similarly, if we don't allow readers while writing, the readers could starve too.
+\\ \linebreak
+This is the case that arises in the assignment. The solution is to have the writers have a simple lock, while the readers have something more involved.
+\begin{lstlisting}
+READER:
+
+wait(mutex)
+readers_count ++;
+if(readers_count == 1) wait(write_lock);
+signal(mutex);
+
+//DO READS
+
+wait(mutex)
+readers_count --;
+if(readers_count == 0 ) signal(write_lock);
+signal(mutex);
+
+\end{lstlisting}
+This has the problem of starvation, and gives readers priority. Starvation could be solved by having a maximum number of readers.
+\\ \linebreak
+
+\section{Deadlock}
+Deadlock is defined as the permanent blocking of a set of processes which compete for resources. In general, there is no efficient solution to this problem. They must involve conflicting resource needs, otherwise there is no possibility of a problem.
+\\ \linebreak
+There are 4 conditions for a problem to be deadlock:
+\begin{itemize}
+	\item Mutual exclusion: No two processes can use the resource at the same time
+	\item Hold and wait: Process may wait for one resource while holding another resource.
+	\item No preemption: Process cannot (or will not) give up the resource until it is done.
+	\item Circular wait: each process in the chain holds a resource which another process is requesting.
+\end{itemize}
+If any of these conditions are not satisfied, no deadlock can occur. THis is useful when thinking of solutions. If we only allow shared resources (rather than competing), we can break mutual exclusion. If we abort the process when trying to request a resource in use, we break \textit{hold and wait}. If we avoid/prevent deadlocks to begin with, we skip the cycle rule. If we allow to backout to a checkpoint, we break the irreversable process (no-preemption).
+\\ \linebreak
+
+\subsection{Resources}
+Resources can be grouped by:
+\\ \linebreak
+\textbf{Reusable}: not depleted by a process using it. (cpu, memory etc)
+\\ \linebreak
+\\ \textbf{Consumable}: can be created and destroyed. (messages, signals etc)
+\\ \linebreak
+\textbf{Preemtable}: Can be taken away by the process using it, with no consequences. (CPU, memory via context switches)
+\\ \linebreak
+\textbf{Non-preemptable}: Cannot safely be removed from a running process (CD, printer etc)
+\\ \linebreak
+Deadlocks mostly occur with reusable and non-preemtable resources.
+
+\subsection{Resource allocation Graphs}
+Processes are shown by circles, resources by squares. Arrow are interactions between processes and resources. If we have cycles in this graph, we may have deadlock but not always if there are multiple units per resource! A cycle is necessary for deadlock, but not sufficient. However, a \textit{knot} is! A knot is when there is a cycle with no non-cycle path leaving the cycle.
+\\ \linebreak
+
+\subsection{Strategies for Deadlocks}
+\begin{itemize}
+	\item Ignore it: most of the time deadlocks are rare, so hope it doesn't happen.
+	\item Prevent it: design the system in a way that deadlock can never happen. (Often inefficient)
+	\item Avoid it: Add checks that will see if the next action will cause a deadlock
+	\item Detection: Let the deadlock occur, and take action to recover.
+\end{itemize}
+
+\subsection{Deadlock Prevention}
+Two ways:
+\\ \linebreak
+Indirect methods: prevent something other than the circular condition
+\\ \linebreak
+Direct: break the cycle condition
+\\ \linebreak
+We might not want to prevent deadlock, since it is almost always more inefficient. But if we did, we can do it by attacking any of the conditioned previously mentioned. However, mutual exclusion is often not-breakable.
+
+\subsection{Deadlock Avoidance}
+In this approach, we monitor the system, and ensure that no action will cause a deadlock. We will have a "Resource Manager" which will do all checks. So when processes ask for resources, they must ask the Resource Manager to do it for them. 
+\\ \linebreak
+For this we need to know in advance a maximum number of resources that a process needs. This can be declared by the process to the Resource Manager.
+Then the algorithm will need to dynamically figure out if the request will cause a cycle.
+\\ \linebreak
+We break up the states into three categories: safe, unsafe and deadlock. Unsafe is when deadlock is possible, but has not yet occurred. Safe is when deadlock can never occur. Ie: there exists a sequence $P_1, P_2, ... , P_n$ of all processes in the system, such that for all $P_i$, the resources that $P_i$ can request can be satisfied by the currently available resources and the resources held by $P_j$, for $j <i$. If there is not enough available resources, the $P_i$ waits for enough $P_j$'s to complete so that $P_i$ can claim those resources. So, our Resource Manager will need to ensure that no process moves from the safe state to an unsafe state. 
+\\ \linebreak
+Using the graph we can easily check if allocating a resource will cause a cycle in the graph, and it it would, then don't allocate it.
+
+\subsubsection{Bankers Algorithm}
+Same idea as above, but the resources can have multiple units. We keep a $max$ matrix of the processes as rows and resources as columns. The entries are how many units of a resource a process wants to use. We keep another matrix, $have$, similar to the other, which contains how many units the processes actually contain at this time. We keep a third matrix, $need$ which has $max_{ij} - have_{ij}$. So when about to allocate a resource, we simply compare the resource vector to the $need$ matrix. If there is a process that could run to completion given those resources, do it. Afterwards, update the $have$  and $need$ matricies accordingly.
+\\ \linebreak
+For this to work, each resource must have multiple units, each process must pre-state its maximum usage of a resource, all processes must be able to wait for resources, and all processes must return its resources in a finite amount of time.
+\\ \linebreak
+
+\subsection{Deadlock avoidance example}
+Suppose you have a printer, and a disk. Two processes want to be able to send files from the disk to the printer.
+\begin{lstlisting}
+program(){
+	get_printer()
+	get_disk()
+		transfer_document()
+	release_disk()
+	release_printer()
+}
+\end{lstlisting}
+
+suppose we have another version in which some orders are flipped, and suppose each process is using a different version.
+\begin{lstlisting}
+program(){
+	get_disk()
+	get_printer()
+		transfer_document()\end{document}
+	release_printer()
+	release_disk()
+}
+\end{lstlisting}
+Assume only one process can access a resource at one time. If they were both using the same version everything would be fine. However, if they are using different versions, problems can arise. Suppose $P_2$ gets the disk, and $P_1$ gets the printer before the other process gets it. This results in a deadlock since both need both resources to 
+
+\subsection{Deadlock Detection}
+Here we don't try to prevent deadlock, we instead try to detect it once it has occurred. Detect by running through the graph for cycles. 
+\\ \linebreak
+Can do on each resource request, or periodically. We can recover by either rolling back processes (keeping checkpoints), terminating processes, or trying to take the resource and give it to another process.
+
+\part{Virtualization}
+In general, the goal of virtualization is to create a "virtual cpu" as a thread to give the impression that it is its own CPU, independent of others. If implemented as processes, each process has its own memory view.  
+However, the filesystem and kernel are still shared. Virtual machines is the idea of giving a process its own version of all of these things.
+\\ \linebreak
+At the base level, a virtual machine monitor is placed on top of the hardware layer, which allows multiple virtual machines to run simultaneously. It does NOT run all of the instructions itself, it just takes care of housekeeping tasks and managing the VM's. The real hardware still takes care of instructions.
+\\ \linebreak
+The \textbf{Host} is the underlying hardware system. The Virtual Memory Manager (VMM) creates an identical interface to the host. The Guest is a processes provided with a virtual copy of the host. 
+\\ \linebreak
+\section{Types of VMMs}
+We also need to create logical partitions between multiple running VM's. This can be done by implementing the VMM in the actual hardware itself, some OS-like software, or run as an application on top of the OS.
+\\ \linebreak
+
+\begin{itemize}
+	\item Paravirtualization: the guest OS is recompiled to be compatible with the VMM
+	\item Programming-environment virtualization: VMMs that are entirely software-based.
+	\item Emulators: Allow any machine to run things meant for a very specific hardware
+	\item Application containment: Not actually virtualization, but segregates applications entirely from the OS.
+\end{itemize}
+
+\section{Privilege Level In VMs}
+In a typical non-virtualized environment, we have the kernel between the user and hardware. In a virtualized environment, we have the VMM layer between the hardware and the guest kernel. 
+\\ \linebreak
+Suppose you have an instruction which can run in either user-mode or kernel mode, which sets a flag bit in the status register which disables interrupts. Obviously, we don't want this to be possible for user-level. So, if the CPU is in user-mode, the bit is ignored, and if in kernel mode, it is not. 
+\\ \linebreak
+In a virtualized environment, the guest kernel is running in user mode, so how can we disable interrupts only for the guest kernel? 
+\\ \linebreak
+First, we need to break sensitive instructions into:
+\begin{itemize}
+	\item Control-sensitive instructions: Attempt to change configuration of resources
+	\item Behavior-sensitive: Instructions who's behavior is determined by configuration of resources.
+\end{itemize}
+If you try to run a privileged instruction in user mode, this causes a fault, whereas if you're in privileged mode it should run fine. So with that in mind, consider this theorem: \\ \linebreak \textit{For any third-generation computer, a virtual machine monitor may be constructed if the set of sensitive instructions for that computer is a subset of the set of privileged instructions.}
+\\ \linebreak
+The solution is to have sensitive instructions which cause a trap to go to the VMM. The VMM will then figure out which VM caused the trap, verifies and emulates the instruction in the guest OS. It does this by maintaining vCPU's which keep track of the mode of the real CPU. 
+\\ \linebreak
+
+\subsection{Solutions to Privilege problem}
+
+\subsubsection{Binary Translation}
+This translator sits between the program and the CPU, and makes sure that no instruction is going to cause problem. These bad instructions are those that are sensitive, but not privileged.
+\\ \linebreak
+
+
+
 \end{document}
