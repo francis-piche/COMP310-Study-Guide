@@ -742,9 +742,274 @@ The solution is to have sensitive instructions which cause a trap to go to the V
 \subsection{Solutions to Privilege problem}
 
 \subsubsection{Binary Translation}
-This translator sits between the program and the CPU, and makes sure that no instruction is going to cause problem. These bad instructions are those that are sensitive, but not privileged.
+This translator sits between the program and the CPU, and makes sure that no instruction is going to cause problem. These bad instructions are those that are sensitive, but not privileged. Maintain a set of instructions ahead of current execution which are translated to run correctly, in a translation cache.
 \\ \linebreak
 
 
+\subsubsection{Improve hardware}
+This is done with VM extensions (actual hardware support for VM's). Here, we have a root mode, which runs the VMM. 
+
+\subsubsection{ParaVirtualization}
+
+\part{Scheduling}
+Suppose you have a bunch of jobs which need to run on a resource. Scheduling is the problem of finding the best sequence of jobs. This depends on what our priorities are ("goodness measure")
+\\ \linebreak
+Scheduling is not the same as allocation. Allocation is about which job will go to which CPU, not the order in which the jobs are executed.
+\\ \linebreak
+The goal of scheduling could be to minimize response time, CPU utilization, total execution time (throughput), etc.
+\\ \linebreak
+
+\section{Required info}
+To properly tackle the problem, we need to know:
+\begin{itemize}
+	\item Number of processes
+	\item The rate of creation/termination
+	\item How long each process takes
+	\item How long the process is waiting for I/O
+	\item The priorities
+\end{itemize}
+
+\section{CPU Scheduler}
+The short term scheduler selects from a queue of ready processes whenever one changes from running to waiting, running to ready, waiting to ready or one terminates.
+\\ \linebreak
+Running to waiting could occur when a semaphore is called, waiting for I/O, etc. This and termination are non-preemptive. (The OS doesn't have to influence it) Running to ready / waiting to ready can happen with a context switch / preemptive action.
+\\ \linebreak
+
+\part{File Systems}
+Secondary storage is non-volatile storage. It's managed by the File System part of the OS. File systems are accessed by both users and processes.
+\\ \linebreak
+Each file is given these attributes:
+\begin{itemize}
+	\item Name, owner, creator
+	\item Type (code, data, binary)
+	\item Location (i-node for UNIX, disk address)
+	\item Organization (Random access, sequential, indexed)
+	\item Access permissions
+	\item Time and date info (last accessed, created etc)
+	\item Size
+	\item Other...
+\end{itemize}
+File systems provide:
+\begin{itemize}
+	\item Keeping track of files (location)
+	\item I/O support
+	\item Management of secondary storage
+	\item Sharing of I/O
+	\item Protection for information in the system.
+\end{itemize}
+
+\section{Directories}
+A directory is essentially a symbol table that can be used to lookup information about files, and is easily read by humans. Directories give a name space for the files to be stored.
+\\ \linebreak
+A directory entry is the attributes of the file, and are updated when files are created, deleted or modified.
+\\ \linebreak
+Directories can be \textbf{single level} (all users share the data, with no nesting of directories). \textbf{Two level} (one level for each user, (involves login)). \textbf{Tree }: each user has a sub-tree of the file system. (Commonly used today).
+\\ \linebreak
+Unix uses a directed acyclic graph to manage directories. Basically a tree, but you can have two parent nodes pointing to the same child (using softlinks).
+\\ \linebreak
+In UNIX, the filesystem also includes many "non-file" things such as processes, input devices, etc.
+\\ \linebreak
+
+\section{File System Layout}
+The disk is cut up into partitions. The MBR or (master boot record) holds all the information needed to boot the system (not the OS). This could contain some tool for switching  to a different OS, since it contains the logic needed to "find" your OS partition on the disk.
+\\ \linebreak
+Next, one of the disk partition will contain your filesystem. This is made up of blocks:
+\begin{itemize}
+	\item The boot block is the chuck which loads the OS
+	\item The super block contains all information about the partition think of it as an "address table" for the partition.
+	\item A free space management block, containing information how to manage space
+	\item I-nodes, which are the actual "file descriptor tables" containing data about files.
+	\item The files and directories themselves.
+\end{itemize}
+
+\section{File Sharing}
+When sharing files between users, we need to protect the files. We use the controlled access approach. This ensures that certain users only have restricted read, write, delete, list and append access.
+\\ \linebreak
+We do not allow users to modify directly the block which stores this information. 
+
+\section{File Operations}
+For this, we need to give users controlled access through operations. Users can:
+\begin{itemize}
+	\item Create: Set all data/metadata for the file (name, permissions, creation date, size, owner etc). This creates an i-node, and stores it in the i-node block. Some need to be specified (name, permissions, type) and the rest is determined by the OS itself. \texttt{touch} is an example of this. It does not write any data to the actual file/directory.
+	\item Write: Send data from a buffer to the file. 
+	\item Read: Get data from current position in file.
+	\item Seek: Decide where to read/write in the file. Interesting thing: what if we seek to the end of the file, and write some data. How big is the file? In this case, it would be a sparse file. Sometimes we are interested in the size of the data in the file, not the actual length of the file block in memory.
+	\item Delete: Storage is released
+	\item Open: Fetch attributes of disk addresses into main memory so that it can be read/written
+	\item Close: Free internal table space. This can be automatically triggered by OS to limit number of open files at one time.
+\end{itemize}
+\subsection{Open}
+A closer look at the open operation.\\ \linebreak
+When we call open(), we want to associate the program to the file. The way this works is that the system call open(filename) will lookup the filename in an in-memory kernel-level data structure which will perform a lookup to find the i-node or data block containing the file.
+\\ \linebreak
+Next, the disk blocks are loaded into memory, where file-descriptor tables are held. So essentially when we call open() we are opening a new entry in the file-descriptor table. This entry points to the \textbf{system-wide open-file table} which contains references to the actual data. 
+\\ \linebreak
+Calling close() will remove the entry from the per-process open-file table.
+\\ \linebreak
+The last process associated to the file to call close() on that file will clear this entry in the system-wide open-file table. 
+
+\section{File Allocation}
+How can we arrange files in the disk to optimize for space and time. Large blocks allow for fast access speed but lots of fragmentation (wasted space) due to small files using up large blocks. Small blocks allows for wasting less space but blocks are harder to search so longer access time. Note that one block can have data from only one file.
+\\ \linebreak
+The sector 0 is always the Master Boot Record (MBR).
+\\ \linebreak
+
+\subsection{Contiguous}
+Keep a list of free spaces. So whenever we want to store data, we find a contiguous list of free blocks large enough to store all of the data.
+\\ \linebreak
+Advantages:
+\begin{itemize}
+	\item Easy to read and write, since the data is always sequential.
+	\item Simplistic
+	\item Don't need to search for the rest of the file after you've found the beginning
+\end{itemize}
+Disadvantages:
+\begin{itemize}
+	\item Need to either know the file size ahead of time or copy the file into a new location once we don't have enough space.
+\end{itemize}
+External fragmentation is when we have not enough contiguous free space to place a file, even though we may have enough total free space. 
+
+\subsection{Chained}
+Here we keep a linked list to the next blocks. Point to first block, then that block points to next block etc. \\ \linebreak
+Advantages:
+\begin{itemize}
+	\item No external fragmentation
+	\item Files can easily grow
+\end{itemize}
+Disadvantages:
+\begin{itemize}
+	\item Lots of seeking
+	\item Random access is difficult since if we need to access only the $n$th block, we need to start from the first and run through all blocks to get to $n$th block.
+\end{itemize}
+This can be improved with a \textit{FAT} table. This is a table which contains all information about the chain (which blocks come in which orders). This gets loaded into memory when we want to access the storage related to these blocks.
+\\ \linebreak
+
+\subsection{Indexed}
+During file creation, an array of pointers is allocated in storage. This block contains only the index of all the blocks which contain the actual data. 
+\\ \linebreak
+\begin{itemize}
+	\item Little internal fragmentation
+	\item Easy access to files (both sequential and random access)
+\end{itemize}
+Disadvantages:
+\begin{itemize}
+	\item There are still lots of seeks for large files
+	\item Maximum file size is limited by how many indices the index block can hold (size of blocks).
+\end{itemize}
+UNIX uses this allocation system.
+
+\section{Free Space Management}
+Disk space is fixed, so we need to be able to reuse memory. To do this, we need to keep track of free space. Notice there are parallels between this and allocation, since the idea is very similar.
+\subsection{Bit Vectors}
+Bitmap is stored on disk at a known address, (often 0). This bitmap has a 0 if that index is free, or 1 if it is not.
+\subsection{Chains}
+Similar to allocation, simply link ALL the free blocks together in one giant chain (not necessarily in order).
+\subsection{Indexed}
+Similar to allocation, a table is stored at a known block (0). Each entry of the table is the index of a free block, and how many blocks are free after it. Likely ordered by the number of free blocks at the index. 
+
+\subsection{Finding free space}
+There are several algorithms for finding free spaces. Bitmaps have machine instructions which can handle this. 
+\\ \linebreak
+For chained, we can try several methods:
+\begin{itemize}
+	\item First fit: simply find the first block in the chain big enough for the request
+	\item Best fit: find the region on the chain which has barely enough size to fit the request
+	\item Worst fit: find the biggest portion of free space
+	\item Next fit: First fit but starting from the previous allocation spot. The chain is circular in this case.
+\end{itemize}
+
+\section{I-Nodes}
+An I-node is something that is pointed to by a directory entry in kernel memory. So every time we run open(), the filename is looked up in the file directory table, on a match it sends to the index of the inode. This inode contains information such as the mode of access to the file (read/write etc), link count (number of processes trying to access it), uid, gid, size etc.
+\\ \linebreak
+The inode also contains 12 disk block pointers, one indirect pointer, one double indirect and one triple indirect pointer. To explain these pointers, consider the following:
+\\ \linebreak
+Suppose you have all the above pointers in your inode, and suppose your block size is 1024bytes. Now say you have a 6000byte file. Then the file will need 6 blocks, with one being not completely filled. We could take 6 pointers and point them to the 6 blocks. Here the indirect do not need to be used. 
+\\ \linebreak
+Suppose you have a larger file, of size 15000bytes. This is more than 12 blocks! Since we only have 12 block pointers, we can only cover 12288bytes with 1024 blocksize and 12 direct pointers. To deal with this, we assign the 12 direct pointers, and the indirect pointer will point to a data block, which will contain even more disk block pointers. Then, \textit{those} blocks will contain the data. So, if each pointer is 4bytes, we could potentially point to $\frac{1024}{4}=256$ blocks, so $256*1024$ bytes total from just one indirect pointer. Similarly, for doubly and triply indirect pointers, we can handle much much larger files. With those, you point to a block which contains pointers to other blocks, which then contain pointers to other blocks.
+\\ \linebreak
+
+\subsection{Example}
+Suppose we have a UNIX file system, 1024 byte block sizes. We seek to 956876, and read 1 byte. How many disk accesses are needed?
+\\ \linebreak
+First, the block number is:
+$$\frac{956876}{1024} = 934 $$
+which corresponds to a double indirect pointer, which means we need 3 accesses (2 index blocks, and 1 data block). Here we assumed that the i-node already exists and this is the first time we access this block. If this was the 2nd or later access to this block, they would already be loaded and we wouldn't need to access them.
+
+\subsection{I-node caching}
+Whenever a file is opened, it's i-node is added to the open-file descriptor table, and it's i-node is loaded into memory. The open-file descriptor table has one entry per process (and it's children). What's important is that the transfer from disk to memory is always done in terms of blocks. We never write bytes. So the I-nodes in memory have entire blocks loaded, once they have accessed and cached them. 
+
+\section{Disk Memory Basics}
+The disk is some magnetic media platter which rotates. You may have many of these plates stacked on top of eachother, each with several tracks. For each platter, we can separate it into sectors. For our purposes, we call these blocks.
+\\ \linebreak
+The drawback to this, is that access time is very slow. The disk must rotate the full sector while under the head, and then the head must move from the current position to the desired cylinder.
+
+\subsection{Disk Scheduling}
+Suppose we want to maximize the throughput for concurrent I/O requests. These requests will all be handled by the disk driver. The strategy is to minimize the time spend by the disk seeking for data, and maximize the time spent reading/writing data. (Minimize movement of the head). 
+\\ \linebreak
+Strategies:
+\begin{itemize}
+	\item Random: (slow, sometimes used as benchmark)
+	\item First come first served: fair, no starvation, not good for response time.
+	\item Priority
+	\item Last in first out
+	\item Shortest service time first: shortest seek time, no guarentee of better average seek time but better than FIFO in general. 
+\end{itemize}
+Advanced Strategies:
+\begin{itemize}
+	\item SCAN: move head back and forth over disk, when head reaches the section that needs to be serviced, do it
+	\item  CSCAN: can only one direction then quickly go back to the beginning. Reduces delay for new arrivals compared to SCAN.
+	\item LOOK: look for a request in a given direction, move in that direction untill no more requests in that direction, then change direction.
+	\item CLOOK: similar to CSCAN, but for LOOK
+\end{itemize}
+The request queue is batched into small groups since we don't want to change the algorithm every time a new request comes in. 
+
+\part{Memory Management}
+Multiprogramming systems need memory management to be able to coexist in memory. We must keep in mind transparency (keeping process unaware of the others), safety, efficiency, and relocation. 
+
+\section{Absolute Loading and Overlays}
+Absolute loading is when a program requires to be loaded into the same memory location all the time. If there is another program in that location, then your program could not load, even if you have extra space.
+\\ \linebreak
+Overlays, by contrast, are the idea of having your program broken up into a tree in which different paths can be loaded into memory at one time, and not need the rest of the tree. Thus, we can have portions of the program in memory at one time, instead of the whole thing. The root is always roaded into the memory, and the subtrees are loaded / reloaded as needed.
+\\ \linebreak
+\section{Partitioning}
+Static partitioning is when your ram is split into fixed blocks. These blocks are for small, average and large jobs. (With one space for the operating system). We have absolute loading for this type of partitioning.
+\\ \linebreak
+Dynamic partitioning is when we create partitions just large enough to fit the next program. This requires the addresses to be relative addresses, not absolute. 
+\\ \linebreak
+\begin{itemize}
+	\item First Fit: allocate the first hole thats big enough
+	\item Next Fit: first fit using a circular free list. 
+	\item Best Fit: allocate the smallest hole that is big enough
+	\item Worst Fit: Allocate the largest hole
+\end{itemize}
+Here we deal with the problem of external fragmentation rather than internal fragmentation. External since the wasted space will always be "outside" the partition. 
+\\ \linebreak
+\section{Swapping}
+Swapping treats the main memory as a "preemptable" resource. This allows for flexibility to systems with even fixed partitions, since then the system can make room for high priority programs on the CPU no matter what. We swap out memory to a high-speed storage if the process needs to be kicked out. This can work together with the CPU scheduler to have high flexibility.
+\section{Memory Protection}
+We must be able to protect programs from eachother. This applies to the OS itself too. This can be provided at both the hardware and software level. 
+\\ \linebreak
+Address translation is the idea of using both partitioning and a hardware capability called memory address mapping. All jumps, loads etc are with relative addresses, not absolute, so each program believes it is in a certain set of addresses. We then place a limit on the address range, and throw an error when the address goes outside the range.
+\\ \linebreak
+\subsection{Dynamic relocation}
+With dynamic relocation, each program-generated (logical) address is translated to a true hardware address at runtime by the MMU. (memory management unit in the CPU). With this, the programs need not even be in a contiguous block of memory! (segmentation). 
+\\ \linebreak
+Suppose we take a program, and split it into segments. One for the code, one for the stack, one for the heap, and one for the shared memory. We then have a base and bound for each of the segments. This is kept as a mapping table for the process. We need to be able to lookup the logical address. To do this, each logical address has a portion call the segment selector, and segment offset. The selector is usually the leftmost digit(s). This tells us which row to look up in the mapping table. The rest is the segment offset. We add this to the base and compare this with the bound. If the bound is higher, then it is a valid access.
+
+\section{Paging}
+Physical memory is divided into fixed sized frames. Logical memory divided into equally sized chunks called pages. So, logical addresses are made up of the page $\#$ (like the segment number) and the page offset. Then, we lookup in the page table to get to the frame and frame offset (real address). This is very analagous to the segmentation mentioned before.
+\\ \linebreak
+The page table is managed by the OS and kept in OS memory. The MMU looks at this table. Note that in the assignment, we had a memory hog program that would be killed once it uses more than the cgroup allows. However, if we only malloc, the program would never get killed, since the program never actually used the memory it requested. Only when you actually use up that memory can it be killed.
+\\ \linebreak
+The problem is that, say we have more logical addresses than real ones, how can we hold a table if the table cannot be held in one page?
+\subsection{Multi Level paging} Similar to the idea of I-nodes, we keep tables which map to other pages. So the logical addresses are actually split into 3. The first part is the page in the top-level page table, then next part is the page in the second-level page table, and the last is the offset in actual ram.
+However, this is slow. We now have to do many memory accesses.
+\\ \linebreak
+
+\section{TLB}
+The translation lookaside buffer is a cache that remembers the mappings that we find, kept in the CPU. See my comp 273 guide for more on the TLB.
+
+\section{Virtual Memory}
+This is the idea of keeping pages in the disk to keep more memory in the storage, and swapping out processes from memory that are not being run. However, disk access is slow, so we need to look in the past, and approximate which processes wont be run in the near future, in order to kick out the best one.
 
 \end{document}
