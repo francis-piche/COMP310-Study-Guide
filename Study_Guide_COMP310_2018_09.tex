@@ -118,7 +118,7 @@ When a program running in user mode sends a system call, the OS then switches to
 \subsection{Monolith vs Micro-Kernel}
 There are two main architectures for an OS, the Monolith (one big program that handles everything) and the Micro-kernel. The latter's kernel is just the bare minimum inter-process communication, while the rest is a series of micro-services each capable of executing one OS task.
 
-\part{Scheduling}
+\part{Multiprocessing}
 \section{Processes}
 A process is an abstraction of a running program. (As stated previously). It is necessary because we need to be able to handle multi-programming. For example, a webserver handling many user requests at the same time.
 \\ \linebreak
@@ -756,17 +756,17 @@ Suppose you have a bunch of jobs which need to run on a resource. Scheduling is 
 \\ \linebreak
 Scheduling is not the same as allocation. Allocation is about which job will go to which CPU, not the order in which the jobs are executed.
 \\ \linebreak
-The goal of scheduling could be to minimize response time, CPU utilization, total execution time (throughput), etc.
+The goal of scheduling could be to minimize response time, CPU utilization (minimize IO wait time), total execution time (throughput), etc.
 \\ \linebreak
 
-\section{Required info}
+\section{Required Information}
 To properly tackle the problem, we need to know:
 \begin{itemize}
 	\item Number of processes
 	\item The rate of creation/termination
 	\item How long each process takes
 	\item How long the process is waiting for I/O
-	\item The priorities
+	\item The priorities (response time? CPU utilization?)
 \end{itemize}
 
 \section{CPU Scheduler}
@@ -774,6 +774,101 @@ The short term scheduler selects from a queue of ready processes whenever one ch
 \\ \linebreak
 Running to waiting could occur when a semaphore is called, waiting for I/O, etc. This and termination are non-preemptive. (The OS doesn't have to influence it) Running to ready / waiting to ready can happen with a context switch / preemptive action.
 \\ \linebreak
+
+\section{Scheduling Approaches}
+
+We can categorize the scheduling approaches into two groups.
+\\ \linebreak
+Non-Preemptive
+\begin{itemize}
+	\item FCFS (First come first served)
+	\item SJF (Shortest job first)
+\end{itemize}
+Those are good for background jobs that don't care about response time.
+\\
+Preemptive:
+\begin{itemize}
+	\item RR (Round Robin)
+	\item Priority
+\end{itemize}
+Those are good for interactive jobs that need fast response time.
+
+\subsection{First-Come-First-Served}
+The pseudo-code is as follows:
+
+Advantages:
+\begin{itemize}
+	\item Simplest
+	\item Performs well for long jobs (good for batch processing)
+\end{itemize}
+Disadvantages:
+\begin{itemize}
+	\item Bad for interactivity
+	\item Short jobs have to wait long time to run if behind a long job
+	\item Can lead to very full queue
+\end{itemize}
+
+\subsection{Shortest Job First}
+Advantages:
+\begin{itemize}
+	\item Same advantages as FCFS
+	\item Fixes FCFS problem of short jobs waiting a long time for long jobs
+\end{itemize}
+Disadvantages:
+\begin{itemize}
+	\item Need to know the estimated processing time of each job beforehand.
+	\item Long jobs can starve if short jobs keep coming in
+\end{itemize}
+Can be made preemptive as well, by checking for the shortest job at short intervals.
+\\ \linebreak
+We can estimate the length of the next CPU burst by assuming it will be similar to the past. 
+\\ \linebreak
+Let $\tau_{n+1}$ be the predicted value of the next CPU burst, and $t_n$ be the length of the previous CPU burst. Let $0 \leq \alpha \leq 1$ (commonly set to 1/2) 
+$$T_{n+1} = \alpha t_n + (1-\alpha)\tau_n$$
+We can then recursively expand this to get the expected burst time. Each term gets exponentially less significant the further back in time it was.
+\\ \linebreak
+\subsection{Round-Robin}
+The efficiency of Round-Robin depends how long we allow each job to run for. If the quantum is too small, we waste time switching, if the quantum is too long, we lost interactiveness. (Just turns into first come first served).
+\subsection{Priority}
+Each process is assigned a priority. Process is chosen based on the highest priority. We can do this with preemption to ensure the highest priority is ALWAYs running. We can add aging so that jobs that have been waiting a long time get higher priority to avoid starvation.
+
+\subsection{Interactive Scheduling}
+Here, the priority of the task depends on the expected time until it blocks. Interactive threads need high priority, computation threads need low priority. We can look at past history to determine priority.
+
+\subsection{Aside, shared Servers}
+Since scheduling algorithms are per-thread, not per-user or per-process, if you have 4, 5-threaded programs, and 1 single threaded program, each 5-threaded program gets 5/21 of the processor while the single thread program gets 1/21.
+
+\subsection{Lottery Scheduling}
+To make sharing fair amongst processes, each process receives a fixed number of tickets. These tickets are divided amongst the threads of each process. Each time a new process is to be run on the CPU, it is decided by randomly selecting a ticket.
+
+\subsection{Proportional Share Scheduling}
+For this, we need to keep track of how long each process has been running on the CPU. This is known as process metering. Each thread has a meter, which increments every clock tick. At each tick, give the CPU to the process with the lowest meter value.
+\\ \linebreak
+We can vary this to allow certain processes to increment their meter value slower than others. 
+\\ \linebreak
+At initialization, the bribe is set to a value greater than 1. The meter rate and starting time is set to 1/bribe for each thread. 
+\begin{lstlisting}
+typedef struct {
+	...
+	float bribe;
+	float meter_rate;
+} thread_t;
+
+void thread_init(thread_t *t, float bribe){
+	if(bribe < 1) abort();
+	t->bribe = bribe;
+	t->meter_rate = 1/bribe; t->metered_time = 1/bribe;
+	insert_queue(t);
+}
+
+void tick(){
+	current = pop_queue();
+	current->metered_time += time_since_last_tick * current->meter_rate;
+
+	insert_queue(current);
+	run(pop_queue());
+}
+\end{lstlisting}
 
 \part{File Systems}
 Secondary storage is non-volatile storage. It's managed by the File System part of the OS. File systems are accessed by both users and processes.
